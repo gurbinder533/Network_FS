@@ -1,11 +1,8 @@
 /*
-  FUSE: Filesystem in Userspace
-  Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
-
-  This program can be distributed under the terms of the GNU GPL.
-  See the file COPYING.
-
-  gcc -Wall hello.c `pkg-config fuse --cflags --libs` -o hello
+  GGNFS : Simple Network file system in userspace using FUSE.
+  Author: Gurbinder Gill
+  email : gill@cs.utexas.edu
+  gcc -Wall ggnfs.c `pkg-config fuse --cflags --libs` -libssh -o ggnfs
 */
 
 #define FUSE_USE_VERSION 26
