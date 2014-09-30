@@ -42,7 +42,7 @@ static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
 
 static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
-static const char *tmp_dir = "/home/gill/AOS/labs/lab2/tmp_dir";
+static const char *tmp_dir = "/tmp/dir/";
 
 /* libssh stuff */
 int verify_knownhost(ssh_session session)
@@ -113,79 +113,65 @@ int verify_knownhost(ssh_session session)
  * source: libssh.org Tutorial
  */
 
-int scp_receive(ssh_session session, ssh_scp scp)
+#define MAX_XFER_BUF_SIZE 16384
+int sftp_read_sync(const char* fileName)
 {
-    int rc;
-    int size, mode;
-    char *filename, *buffer;
-    rc = ssh_scp_pull_request(scp);
-    if (rc != SSH_SCP_REQUEST_NEWFILE)
-    {
-        fprintf(stderr, "Error receiving information about file: %s\n",
-        ssh_get_error(session));
-        return SSH_ERROR;
-    }
-    size = ssh_scp_request_get_size(scp);
-    filename = strdup(ssh_scp_request_get_filename(scp));
-    mode = ssh_scp_request_get_permissions(scp);
-    printf("Receiving file %s, size %d, permisssions 0%o\n",
-    filename, size, mode);
-    free(filename);
-    buffer = malloc(size);
-    if (buffer == NULL)
-    {
-        fprintf(stderr, "Memory allocation error\n");
-        return SSH_ERROR;
-    }
-    ssh_scp_accept_request(scp);
-    rc = ssh_scp_read(scp, buffer, size);
-    if (rc == SSH_ERROR)
-    {
-        fprintf(stderr, "Error receiving file data: %s\n",
-        ssh_get_error(session));
-        free(buffer);
-        return rc;
-    }
-    printf("Done\n");
-    write(1, buffer, size);
-    free(buffer);
-    rc = ssh_scp_pull_request(scp);
-    if (rc != SSH_SCP_REQUEST_EOF)
-    {
-        fprintf(stderr, "Unexpected request: %s\n",
-        ssh_get_error(session));
-        return SSH_ERROR;
-    }
-    return SSH_OK;
+  int access_type;
+  sftp_file file;
+  char buffer[MAX_XFER_BUF_SIZE];
+  int nbytes, nwritten, rc;
+  int fd;
+  access_type = O_RDONLY;
+
+  char filePath[PATH_MAX];
+  strcpy(filePath, remotePath);
+  strcat(filePath,"/");
+  strcat(filePath,fileName);
+
+  file = sftp_open(ggnfs_data.sftp, filePath, access_type, 0);
+  if (file == NULL) {
+      fprintf(stderr, "Can't open file for reading: %s\n",
+              ssh_get_error(ggnfs_data.session));
+      return SSH_ERROR;
+  }
+
+  char localFilePath[PATH_MAX] ;
+  strcpy(localFilePath, tmp_dir);	
+  strcat(tmp_dir, fileName);
+
+  fd = open(localFilePath, O_CREAT);
+  if (fd < 0) {
+      fprintf(stderr, "Can't open file for writing: %s\n",
+              strerror(errno));
+      return SSH_ERROR;
+  }
+  for (;;) {
+      nbytes = sftp_read(file, buffer, sizeof(buffer));
+      if (nbytes == 0) {
+          break; // EOF
+      } else if (nbytes < 0) {
+          fprintf(stderr, "Error while reading file: %s\n",
+                  ssh_get_error(ggnfs_data.session));
+          sftp_close(file);
+          return SSH_ERROR;
+      }
+      nwritten = write(fd, buffer, nbytes);
+      if (nwritten != nbytes) {
+          fprintf(stderr, "Error writing: %s\n",
+                  strerror(errno));
+          sftp_close(file);
+          return SSH_ERROR;
+      }
+  }
+  rc = sftp_close(file);
+  if (rc != SSH_OK) {
+      fprintf(stderr, "Can't close the read file: %s\n",
+              ssh_get_error(ggnfs_data.session));
+      return rc;
+  }
+  return SSH_OK;
 }
 
-int scp_read(ssh_session session, char* fileName)
-{
-    ssh_scp scp;
-    int rc;
-    scp = ssh_scp_new
-    (session, SSH_SCP_READ, fileName);
-    if (scp == NULL)
-    {
-        fprintf(stderr, "Error allocating scp session: %s\n",
-        ssh_get_error(session));
-        return SSH_ERROR;
-    }
-    rc = ssh_scp_init(scp);
-    if (rc != SSH_OK)
-    {
-        fprintf(stderr, "Error initializing scp session: %s\n",
-        ssh_get_error(session));
-        ssh_scp_free(scp);
-        return rc;
-    }
-    
-    scp_receive(session, scp);
-
-    ssh_scp_close(scp);
-    ssh_scp_free(scp);
-    return SSH_OK;
-}
 
 /*
 static void ggnfs_fullpath(char fpath[PATH_MAX], const char *path) 
@@ -319,13 +305,26 @@ int ggnfs_opendir(const char *path, struct fuse_file_info *fi)
 
 static int ggnfs_open(const char *path, struct fuse_file_info *fi)
 {
-	if (strcmp(path, hello_path) != 0)
+	int res = 0;
+        sftp_read_sync(path);
+
+	char localFilePath[PATH_MAX] ;
+        strcpy(localFilePath, tmp_dir);	
+	strcat(tmp_dir, path);
+	
+        int fd;
+	fd = open(localFilePath, fi->flags);
+	if (fd < 0)
+	     perror("ggnfs_open: no such file");
+
+	fi->fh = fd;
+	/*if (strcmp(path, hello_path) != 0)
 		return -ENOENT;
 
 	if ((fi->flags & 3) != O_RDONLY)
 		return -EACCES;
-
-	return 0;
+        */
+	return res;
 }
 
 static int ggnfs_read(const char *path, char *buf, size_t size, off_t offset,
