@@ -41,7 +41,7 @@ static struct ggnfs_state ggnfs_data;
 static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
 
-static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
+static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs/";
 static const char *tmp_dir = "/tmp/dir/";
 
 /* libssh stuff */
@@ -212,7 +212,7 @@ static int ggnfs_getattr(const char *path, struct stat *stbuf)
         sftp_attributes_free(attributes);
 	res = SSH_OK;
      }
-    return res;    
+    return EXIT_SUCCESS;    
 
 }
 
@@ -224,23 +224,44 @@ static int ggnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     (void) offset;
     (void) fi;	 
 
-    sftp_dir dir;
+    //sftp_dir dir;
+    sftp_dir *dir;
+    dir = (sftp_dir *)(uintptr_t) fi->fh;
+   /* if (!sftp_dir_eof(dir))
+    {
+        fprintf(stderr, "Can't list directory: %s\n",
+            ssh_get_error(ggnfs_data.session));
+        sftp_closedir(dir);
+        return SSH_ERROR;
+    }
+   */
     sftp_attributes attributes;
     int rc1;
-    dir = sftp_opendir(ggnfs_data.sftp, remotePath);
+    /*dir = sftp_opendir(ggnfs_data.sftp, remotePath);
     if (!dir) 
     {
          fprintf(stderr, "inside readdir  Directory not opened\n",ssh_get_error(ggnfs_data.session));
 	 return -1;
     }
-
+    */
     while ((attributes = sftp_readdir(ggnfs_data.sftp, dir)) != NULL)
     {
-        if(filler(buf, attributes->name, NULL, 0))
+	struct stat stbuf;
+
+        stbuf.st_uid   = attributes->uid; 
+        stbuf.st_gid   = attributes->gid;
+        stbuf.st_atime = attributes->atime;
+        stbuf.st_ctime = attributes->createtime;
+        stbuf.st_mtime = attributes->mtime;
+        stbuf.st_size  = attributes->size;
+        stbuf.st_mode  = attributes->permissions;
+
+        if(filler(buf, attributes->name, &stbuf, 0))
         {
             fprintf(stderr, "Error ggnfs_readdir filler: buffer full");
             return -ENOMEM;
         }
+     sftp_attributes_free(attributes);
     }
 
     if (!sftp_dir_eof(dir))
@@ -251,7 +272,6 @@ static int ggnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return SSH_ERROR;
     }
 
-    sftp_attributes_free(attributes);
     rc1 = sftp_closedir(dir);
     if (rc1 != SSH_OK)
     {
@@ -265,32 +285,11 @@ int ggnfs_opendir(const char *path, struct fuse_file_info *fi)
     int retstat = 0;
     
     fprintf(stderr, "i m inside opendir path: %s\n",path );	
-    sftp_session sftp;
-    int rc;
 
-    sftp = sftp_new(ggnfs_data.session);
-    if (sftp == NULL)
-    {
-         fprintf(stderr, "Error allocating SFTP session: %s\n",
-         ssh_get_error(ggnfs_data.session));
-     //    return SSH_ERROR;
-     }
-
-    rc = sftp_init(sftp);
-    if (rc != SSH_OK)
-    {
-         fprintf(stderr, "Error initializing SFTP session: %s.\n",
-         sftp_get_error(sftp));
-         sftp_free(sftp);
-      //   return rc;
-    }
-
-    ggnfs_data.sftp = sftp; // store for later use. XXX check 
- 
     sftp_dir dir;
     sftp_attributes attributes;
     int rc1;
-    dir = sftp_opendir(sftp, remotePath);
+    dir = sftp_opendir(ggnfs_data.sftp, remotePath);
     if (!dir) 
     {
          fprintf(stderr, "opendir Directory not opened: %s\n",
@@ -299,8 +298,7 @@ int ggnfs_opendir(const char *path, struct fuse_file_info *fi)
     
     fi->fh = (intptr_t) dir;
    
-    sftp_free(sftp); 
-    return retstat;
+    return EXIT_SUCCESS;
 }
 
 static int ggnfs_open(const char *path, struct fuse_file_info *fi)
@@ -356,7 +354,7 @@ static struct fuse_operations ggnfs_oper = {
 	.readdir	= ggnfs_readdir,
 	.open		= ggnfs_open,
 	.read		= ggnfs_read,
-//	.opendir	= ggnfs_opendir,
+	.opendir	= ggnfs_opendir,
 //	.init		= ggnfs_init,
 };
 
@@ -550,7 +548,7 @@ int main(int argc, char *argv[])
     /*** TESTING: status working ***/
     //printf("show_remote_ls\n");
     //show_remote_ls(ggnfs_data->session);
-    //sftp_list_dir(ggnfs_data.session, ggnfs_data.sftp);
+    sftp_list_dir(ggnfs_data.session, ggnfs_data.sftp);
 
 
     printf("about to call fuse_main\n");
