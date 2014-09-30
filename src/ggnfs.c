@@ -24,6 +24,7 @@
 #include <stdlib.h>
 
 
+#define MAX_XFER_BUF_SIZE 16384
 
 struct ggnfs_state {
     ssh_session session;
@@ -41,8 +42,8 @@ static struct ggnfs_state ggnfs_data;
 static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
 
-static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs/";
-static const char *tmp_dir = "/tmp/dir/";
+static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
+static const char *tmp_dir = "/tmp/dir";
 
 /* libssh stuff */
 int verify_knownhost(ssh_session session)
@@ -113,9 +114,9 @@ int verify_knownhost(ssh_session session)
  * source: libssh.org Tutorial
  */
 
-#define MAX_XFER_BUF_SIZE 16384
 int sftp_read_sync(const char* fileName)
 {
+  fprintf(stderr, "inside sftp_read_sync\n");
   int access_type;
   sftp_file file;
   char buffer[MAX_XFER_BUF_SIZE];
@@ -125,10 +126,13 @@ int sftp_read_sync(const char* fileName)
 
   char filePath[PATH_MAX];
   strcpy(filePath, remotePath);
-  strcat(filePath,"/");
+  //strcat(filePath,"/");
   strcat(filePath,fileName);
 
+  fprintf(stderr, "filePath : %s\n", filePath);
+
   file = sftp_open(ggnfs_data.sftp, filePath, access_type, 0);
+
   if (file == NULL) {
       fprintf(stderr, "Can't open file for reading: %s\n",
               ssh_get_error(ggnfs_data.session));
@@ -137,14 +141,16 @@ int sftp_read_sync(const char* fileName)
 
   char localFilePath[PATH_MAX] ;
   strcpy(localFilePath, tmp_dir);	
-  strcat(tmp_dir, fileName);
+  strcat(localFilePath, fileName);
 
-  fd = open(localFilePath, O_CREAT);
+  fprintf(stderr, "local file path NOW NOW-> : %s\n", localFilePath);
+  fd = open(localFilePath, O_CREAT | O_RDWR,0644); 
   if (fd < 0) {
       fprintf(stderr, "Can't open file for writing: %s\n",
               strerror(errno));
       return SSH_ERROR;
   }
+  fprintf(stderr, "before for loop to read -> : %s\n", localFilePath);
   for (;;) {
       nbytes = sftp_read(file, buffer, sizeof(buffer));
       if (nbytes == 0) {
@@ -163,12 +169,15 @@ int sftp_read_sync(const char* fileName)
           return SSH_ERROR;
       }
   }
+  fprintf(stderr, "AFTER for loop to read -> : %s\n", localFilePath);
   rc = sftp_close(file);
   if (rc != SSH_OK) {
       fprintf(stderr, "Can't close the read file: %s\n",
               ssh_get_error(ggnfs_data.session));
       return rc;
   }
+
+  fprintf(stderr, "I AM DONE \n");
   return SSH_OK;
 }
 
@@ -180,20 +189,29 @@ static void ggnfs_fullpath(char fpath[PATH_MAX], const char *path)
     strncat(fpath, path, PATH_MAX);
 
 }
-static void ggnfs_fullRemotepath(char fRemotepath[PATH_MAX], const char *path) 
+*/
+
+static void ggnfs_fullRemotepath(char filePath[PATH_MAX], const char *path) 
 {
-    strcpy(fRemotepath, remotePath);
-    strncat(fRemotepath, path, PATH_MAX);
+    strcpy(filePath, remotePath);
+   // strcat(filePath,"/");
+    strcat(filePath,path);
+
 
 }
-*/
+
 static int ggnfs_getattr(const char *path, struct stat *stbuf)
 {
  
     int res = 0;
+    char filePath[PATH_MAX];
+    strcpy(filePath, remotePath);
+    strcat(filePath,"/");
+    strcat(filePath,path);
+
     sftp_dir dir;
     sftp_attributes attributes;
-    attributes = sftp_lstat(ggnfs_data.sftp, remotePath); 
+    attributes = sftp_lstat(ggnfs_data.sftp, filePath); 
     
     if (attributes != NULL) 
     {
@@ -214,6 +232,59 @@ static int ggnfs_getattr(const char *path, struct stat *stbuf)
      }
     return EXIT_SUCCESS;    
 
+}
+
+int ggnfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    fprintf(stderr, "inside ggnfs_read\n");
+
+    int retstat = 0;
+    
+    retstat = pread(fi->fh, buf, size, offset);
+    if (retstat < 0)
+	 fprintf(stderr, "couldn't read file\n");
+
+    
+   /* sftp_file file;
+    int access_type = O_RDONLY;
+
+    char buffer[MAX_XFER_BUF_SIZE];
+    int nbytes, nwritten, rc;
+
+    char filePath[PATH_MAX];
+    ggnfs_fullRemotepath(filePath, path);
+
+    
+    fprintf(stderr, "inside ggnfs_read full path -----> %s\n", filePath);
+
+    file = sftp_open(ggnfs_data.sftp, filePath, access_type , 0);
+    if (file == NULL) {
+      fprintf(stderr, "Can't open file for reading: %s\n",
+              ssh_get_error(ggnfs_data.session));
+      return SSH_ERROR;
+    }
+
+    for (;;) {
+      nbytes = sftp_read(file, buf, size);
+      retstat += nbytes;
+      if (nbytes == 0) {
+          break; // EOF
+      } else if (nbytes < 0) {
+          fprintf(stderr, "Error while reading file: %s\n",
+                  ssh_get_error(ggnfs_data.session));
+          sftp_close(file);
+          return SSH_ERROR;
+      }
+    }
+  rc = sftp_close(file);
+  if (rc != SSH_OK) {
+      fprintf(stderr, "Can't close the read file: %s\n",
+              ssh_get_error(ggnfs_data.session));
+      return rc;
+  }
+  
+    */
+    return retstat;
 }
 
 static int ggnfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -303,47 +374,79 @@ int ggnfs_opendir(const char *path, struct fuse_file_info *fi)
 
 static int ggnfs_open(const char *path, struct fuse_file_info *fi)
 {
+        fprintf(stderr, "inside ggnfs_open\n");
 	int res = 0;
+        fprintf(stderr, "going to sftp_read_sync\n");
         sftp_read_sync(path);
 
+        fprintf(stderr, "after after \n");
 	char localFilePath[PATH_MAX] ;
         strcpy(localFilePath, tmp_dir);	
-	strcat(tmp_dir, path);
+	strcat(localFilePath, path);
 	
         int fd;
+	fprintf(stderr, "PERMISSION ARE : %d\n", fi->flags);
 	fd = open(localFilePath, fi->flags);
+        fprintf(stderr, "File opened at path : %s \n", localFilePath);
 	if (fd < 0)
 	     perror("ggnfs_open: no such file");
 
 	fi->fh = fd;
-	/*if (strcmp(path, hello_path) != 0)
-		return -ENOENT;
-
-	if ((fi->flags & 3) != O_RDONLY)
-		return -EACCES;
-        */
 	return res;
 }
 
-static int ggnfs_read(const char *path, char *buf, size_t size, off_t offset,
-		      struct fuse_file_info *fi)
+
+int ggnfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-	size_t len;
-	(void) fi;
-	if(strcmp(path, hello_path) != 0)
-		return -ENOENT;
+     	int retstat = 0;
+	retstat = pwrite(fi->fh, buf, size, offset);
+        if (retstat < 0)
+		fprintf(stderr,"Write failed\n");
 
-	len = strlen(hello_str);
-	if (offset < len) {
-		if (offset + size > len)
-			size = len - offset;
-		memcpy(buf, hello_str + offset, size);
-	} else
-		size = 0;
+	return retstat;
+	
 
-	return size;
+
+
+/*
+  int access_type = O_WRONLY | O_CREAT ;//| O_TRUNC;
+  sftp_file file;
+  const char *helloworld = "Hello, World!\n";
+  int length = strlen(helloworld);
+  int rc, nwritten;
+  
+   char filePath[PATH_MAX];
+   ggnfs_fullRemotepath(filePath, path);
+
+
+
+  file = sftp_open(ggnfs_data.sftp, "helloworld/helloworld.txt",
+                   access_type, S_IRWXU);
+  if (file == NULL)
+  {
+    fprintf(stderr, "Can't open file for writing: %s\n",
+            ssh_get_error(session));
+    return SSH_ERROR;
+  }
+  nwritten = sftp_write(file, helloworld, length);
+  if (nwritten != length)
+  {
+    fprintf(stderr, "Can't write data to file: %s\n",
+            ssh_get_error(session));
+    sftp_close(file);
+    return SSH_ERROR;
+  }
+  rc = sftp_close(file);
+  if (rc != SSH_OK)
+  {
+    fprintf(stderr, "Can't close the written file: %s\n",
+            ssh_get_error(session));
+    return rc;
+  }
+
+*/
+
 }
-
 void *ggnfs_init(struct fuse_conn_info *conn)
 {
     return GGNFS_DATA;
@@ -354,6 +457,7 @@ static struct fuse_operations ggnfs_oper = {
 	.readdir	= ggnfs_readdir,
 	.open		= ggnfs_open,
 	.read		= ggnfs_read,
+	.write		= ggnfs_write,
 	.opendir	= ggnfs_opendir,
 //	.init		= ggnfs_init,
 };
