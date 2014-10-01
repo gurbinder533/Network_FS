@@ -388,6 +388,7 @@ int ggnfs_release(const char *path, struct fuse_file_info *fi)
         }
 
 	fprintf(stderr, "before for loop localPath : %s\n", localFilePath);
+      lseek(fi->fh, 0L, SEEK_SET);
       for (;;) {
 	fprintf(stderr, "inside loop: \n");
       	nbytes = read(fi->fh, buffer, sizeof(buffer));
