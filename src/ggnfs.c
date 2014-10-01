@@ -39,7 +39,8 @@ static struct ggnfs_state ggnfs_data;
 static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
 
-static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
+//static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
+static const char *remotePath = "/tmp/mount_point";
 static const char *tmp_dir = "/tmp/dir";
 
 /* libssh stuff */
@@ -195,8 +196,6 @@ static void ggnfs_fullRemotepath(char filePath[PATH_MAX], const char *path)
 {
     strcpy(filePath, remotePath);
     strcat(filePath,path);
-
-
 }
 
 static void ggnfs_fullLocalpath(char localFilePath[PATH_MAX], const char *path) 
@@ -359,6 +358,15 @@ int ggnfs_write(const char *path, const char *buf, size_t size, off_t offset, st
 
 int ggnfs_release(const char *path, struct fuse_file_info *fi)
 {
+	char localFilePath[PATH_MAX] ;
+	ggnfs_fullLocalpath(localFilePath, path);
+
+	unlink(localFilePath);
+
+}
+
+int ggnfs_flush(const char *path, struct fuse_file_info *fi)
+{
 	int retstat = 0;
 	int nbytes;
 
@@ -369,7 +377,7 @@ int ggnfs_release(const char *path, struct fuse_file_info *fi)
 
 	fprintf(stderr, "localPath : %s\n", localFilePath);
    	char buffer[MAX_XFER_BUF_SIZE];
-	int access_type = O_WRONLY | O_CREAT;// | O_TRUNC;
+	int access_type = O_WRONLY | O_CREAT | O_TRUNC;
 	sftp_file file;
 	int rc, nwritten;
   
@@ -420,7 +428,7 @@ int ggnfs_release(const char *path, struct fuse_file_info *fi)
 		return rc;
 	}
 
-        close(fi->fh);
+        //close(fi->fh);
 	fprintf(stderr, "localPath : %s\n", localFilePath);
 
 	return EXIT_SUCCESS; 
@@ -439,6 +447,7 @@ static struct fuse_operations ggnfs_oper = {
 	.write		= ggnfs_write,
 	.opendir	= ggnfs_opendir,
 	.release	= ggnfs_release,
+	.flush  	= ggnfs_flush,
 //	.init		= ggnfs_init,
 };
 
@@ -579,9 +588,9 @@ int main(int argc, char *argv[])
             exit(-1);
         }
         // Authenticate ourselves
-        char * password = "5vs2Xg89j#";// getpass("Password: ");
-        rc = ssh_userauth_password(ggnfs_data.session, NULL, password);
-        //rc = ssh_userauth_publickey_auto(ggnfs_data->session, NULL, NULL);
+        //char * password = "5vs2Xg89j#";// getpass("Password: ");
+        //rc = ssh_userauth_password(ggnfs_data.session, NULL, password);
+        rc = ssh_userauth_publickey_auto(ggnfs_data.session, NULL, NULL);
         if (rc != SSH_AUTH_SUCCESS)
         {
             fprintf(stderr, "Error authenticating with password: %s\n",
