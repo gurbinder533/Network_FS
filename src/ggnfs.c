@@ -23,6 +23,7 @@
 
 #define MAX_XFER_BUF_SIZE 16384
 
+/* To maintain connection state*/
 struct ggnfs_state {
     ssh_session session;
     sftp_session sftp;
@@ -31,19 +32,20 @@ struct ggnfs_state {
 
 };
 
-
-static struct ggnfs_state ggnfs_data;
+/* To maintain connection state*/
+static struct ggnfs_state ggnfs_data; 
 
 #define GGNFS_DATA ((struct ggnfs_state *) fuse_get_context()->private_data)
 
-static const char *hello_str = "Hello World!\n";
-static const char *hello_path = "/hello";
 
 //static const char *remotePath = "/h1/ggill/Gill/AOS/lab2/fs";
 static const char *remotePath = "/tmp/mount_point";
 static const char *tmp_dir = "/tmp/dir";
 
-/* libssh stuff */
+/**
+ * libssh stuff 
+ * source: libssh.org Tutorial
+ */
 int verify_knownhost(ssh_session session)
 {
     int state, hlen;
@@ -177,8 +179,6 @@ static int ggnfs_open(const char *fileName, struct fuse_file_info *fi)
 
 
    fi->fh = fd;
-  //close(fd);
-  fprintf(stderr, "I AM DONE \n");
   return EXIT_SUCCESS;
 }
 
@@ -453,6 +453,11 @@ static struct fuse_operations ggnfs_oper = {
 
 
 /**** TESTING ****/
+/**
+ * For testing purposes 
+ * source: libssh.org Tutorial
+ */
+
 int show_remote_ls(ssh_session session)
 {
 
@@ -551,15 +556,7 @@ int sftp_list_dir(ssh_session session, sftp_session sftp)
 int main(int argc, char *argv[])
 {
     int fuse_stat;
-    //struct ggnfs_state *ggnfs_data;
-
-   /* ggnfs_data = malloc(sizeof(struct ggnfs_state));
-    if (ggnfs_data == NULL) {
-        perror("main calloc");
-        abort();
-    }
-   */
-    ggnfs_data.remoteHost =argv[1]; //"ggill@faraday.ices.utexas.edu";
+    ggnfs_data.remoteHost =argv[1];
     ggnfs_data.rootdir = realpath(argv[2], NULL);
     
     printf("hostname -> %s\n", ggnfs_data.remoteHost);
@@ -588,8 +585,10 @@ int main(int argc, char *argv[])
             exit(-1);
         }
         // Authenticate ourselves
-        //char * password = "5vs2Xg89j#";// getpass("Password: ");
+        //char * password = "Password";// getpass("Password: ");
         //rc = ssh_userauth_password(ggnfs_data.session, NULL, password);
+
+	/* using public key authentication method */
         rc = ssh_userauth_publickey_auto(ggnfs_data.session, NULL, NULL);
         if (rc != SSH_AUTH_SUCCESS)
         {
@@ -620,7 +619,8 @@ int main(int argc, char *argv[])
       //   return rc;
     }
 
-	
+	 
+    /* Adjusting agruments to pass to FUSE mount function*/
     int i = 1;
     for(; i < argc; ++i) {
       argv[i] = argv[i+1];
